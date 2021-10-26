@@ -1,0 +1,26 @@
+// --- AverageTotalPressure.h ---
+// computes the massflow weighted average total pressure [Pa] within the specified face selection
+// or the volume weighted average total pressure [Pa] within the specified cell selection 
+
+
+$$init
+if(!init){
+   if(IAMPRO <= 1 && divisor > 0.0){   // MPI-slaves must not write message!
+      print "Formula: mean total pressure over", name, "at ITC", t, "is", sum/divisor, "Pa";
+   }
+}
+
+
+$$formula
+double weight;
+if(vol <= 0.0) {
+  weight = (n.v)*den;
+  divisor += weight;
+  return weight * (ap + 0.5 * den * (v.n)**2);
+}
+else
+{ 
+  weight= vol;
+  divisor += weight;
+  return weight * (ap + 0.5 * den * v.v);
+}

@@ -1,0 +1,21 @@
+
+// --- spray_mass_in_selection.h ---
+// computes spray mass within specified cell selection
+char marked[1];
+$$init
+int i;
+double pi6 = acos(-1.0) / 6.0;
+if(init){
+	resize(marked, NCELL);
+	marked = 0;
+}else{
+	sum = 0.0;
+	for(i = 0; i < NDROPS; i++){
+		if(marked[NCELLN[i]-1]){
+	 		sum += CDROPN[i] * DDROPN[i] * pow(SDROPN[i], 3) * pi6;
+		}
+	}
+	MPI_SUM_D(sum);
+}
+$$formula
+marked[index] = 1;

@@ -1,0 +1,28 @@
+
+////////////////////////////////////////////////////////////////////////////////
+//
+//
+// (c) AVL Deutschland GmbH
+// author: Carsten Schmalhorst
+//
+//
+////////////////////////////////////////////////////////////////////////////////
+#define INT_Index_NH3 3
+#define INT_Index_HNCO 4
+int off1 = INT_Index_NH3 -1;
+int off2 = INT_Index_HNCO -1;
+
+$$init
+calcRunningSum();
+
+$$formula
+if(tstart==-1)
+  return 0.;
+
+if(index < NCELL) {
+	return (PASPHI[index+off1*NCELL]+PASPHI[index+off2*NCELL]);
+}
+if(index<NCELL+NBFAC) {
+	return (PASPHB[index-NCELL+off1*NBFAC]+PASPHB[index-NCELL+off2*NBFAC]);
+}
+return 0.;

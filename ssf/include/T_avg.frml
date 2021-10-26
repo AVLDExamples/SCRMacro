@@ -1,0 +1,7 @@
+
+// --- Temperature_face_averaged.h ---
+// computes average temperature [K] over face-selection;
+$$init
+$$formula
+divisor += den*|n|;
+return den*|n|*temp;

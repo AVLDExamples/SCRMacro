@@ -1,0 +1,31 @@
+
+//evaporation_in_selection.frml
+//calculates total evaporation from spray and wallfilm in a given selection
+//yields evaporation in time step, if INT_SUM==0,
+//otherwise it sums up to total evaporation
+#define INT_SUM 1
+double old = -1;
+
+$$init
+char buffer[64];
+if(INT_SUM) {
+	if(init) {
+		init =0;
+		if(old==-1) {
+			if(GetUserDef(name, buffer)) {
+				sscanf(buffer,"%lf",old);
+			} else {
+				old=0;
+			}
+		}
+	}
+	else {
+		old += sum;
+		sum = old;
+		sprintf(buffer, "%g", sum);
+		SetUserDef(name, buffer);
+	}
+}
+
+$$formula
+return SSMASS[index];

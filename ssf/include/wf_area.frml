@@ -1,0 +1,26 @@
+// --- Wall_film_wetted_surface.h
+// Computes the surface [m2] wetted by wall film at a boundary face selection
+// as 2D result.
+
+int iwfc_of_ib[0];
+
+$$init
+int i, ib;
+if(init){
+	// set up bnd-index for each wall film cell
+	resize(iwfc_of_ib, NBFAC + 1);
+	iwfc_of_ib = -1;
+	i = IWCELL - IWBUFF; while(i--){
+		ib = LXTBND[i][0] - 1;
+		iwfc_of_ib[ib] = i;
+	}
+}else{
+	resize(iwfc_of_ib, 0);
+	if(IAMPRO < 2){
+		print "wallfilm-wetted area in selection", name, ":", sum, "[m2]";
+	}
+}
+
+$$formula
+if(index < NBFAC && iwfc_of_ib[index] >= 0 && HWFILM[iwfc_of_ib[index]] > WFCRIT) return |n|;
+return 0.0;

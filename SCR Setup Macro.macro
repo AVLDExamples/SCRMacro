@@ -1,0 +1,356 @@
+#!/usr/bin/env python
+#
+# v1.1.2
+# SCRMacro for FIRE_WM v2017
+# author: C. Schmalhorst
+# (C) AVL Deutschland GmbH
+# @date=20170322
+# @version=112
+#
+import os
+import math
+import sys
+import act
+#needed to include relative to macro's location
+cpath=os.getcwd()
+if not cpath in sys.path:
+    sys.path.append(cpath)
+#for debugging/development reasons - can be deleted once released
+try:
+    del(sys.modules['ssf.postproc'])
+except KeyError:
+    pass
+try:
+    del(sys.modules['ssf.ssf'])
+except KeyError:
+    pass
+try:
+    del(sys.modules['ssf'])
+except KeyError:
+    pass
+try:
+    del(sys.modules['spray.spray'])
+except KeyError:
+    pass
+try:
+    del(sys.modules['spray'])
+except KeyError:
+    pass
+try:
+    del(sys.modules['gui.guiElements'])
+except KeyError:
+    pass
+try:
+    del(sys.modules['gui'])
+except KeyError:
+    pass
+try:
+    del(sys.modules['gtk'])
+except KeyError:
+    pass
+
+import gtk
+import matplotlib
+matplotlib.use('GtkAgg')
+
+import gui
+import ssf
+import act.serial
+from spray import InjectorProperties, TargetMassFlowProperties, make_spraycones
+from _guipm import FC_GuiPMGetMeshesUnderCase, FC_GuiPMGetCaseNames
+from _pre import PreFameToolsGetCellSelectionsFromFlmFile, \
+    PreFameToolsGetFaceSelectionsFromFlmFile, \
+    PreGeoInfoGetNumSurfaceFaces, \
+    PreGetMeshes, PreCalcSurface, PreGetSurfaceNormal, PreGetSurfaceCenter
+from _projectmanager import PM_GetMeshFileName, PM_GetProjectIOData, PM_GetProjectName
+from gui import populateListForCasename
+#gtk.gdk.threads_init()
+
+
+def getCoordsForSelection(case, injectorSelection, injectorProps):
+    meshname = FC_GuiPMGetMeshesUnderCase(case,0,0)[0]
+
+    # check if mesh is loaded
+    meshname = meshname+'(1)'
+
+    if not meshname in PreGetMeshes():
+        return [0,0,0], [0,0,1]
+
+    #for movement into the volume: projection of diameter tipped by schirmwinkel
+    ddx = injectorProps.outer_diam.sval/2.*math.cos(injectorProps.spray_angle1.sval)*1.1
+    #make sure only injectorSelection is activated
+    selections = SelNames( meshname )
+    for sel in selections:
+        SelDeActivate(meshname, sel)
+    SelShowActive(meshname);
+    GuiUpdate(0,0);
+    PreCalcSurface(meshname)
+    SelActivate(meshname, injectorSelection)
+    SelShowActive( meshname);
+    ViewerActivate("Viewer1",meshname);
+    GuiUpdate(0,0);
+    PreCalcSurface(meshname)
+
+    #number of faces to iterate over
+    i = PreGeoInfoGetNumSurfaceFaces(meshname)
+    x = [0,0,0]
+    dx = [0,0,0]
+
+    w = 0 # mean position is area averaged
+    #now iterate over all the faces and calculate a
+    for k in range(i):
+            p = PreGetSurfaceNormal(meshname, k)
+            scale = 1./math.sqrt( p[0]*p[0] + p[1]*p[1] + p[2]*p[2] )
+            weight = 1./scale
+            w += weight
+            dx[0] = dx[0]+p[0] * scale/float(i)
+            dx[1] = dx[1]+p[1] * scale/float(i)
+            dx[2] = dx[2]+p[2] * scale/float(i)
+            p = PreGetSurfaceCenter(meshname, k)
+            x[0] = x[0] + p[0]*weight
+            x[1] = x[1] + p[1]*weight
+            x[2] = x[2] + p[2]*weight
+    x[0] = x[0]/w
+    x[1] = x[1]/w
+    x[2] = x[2]/w
+
+    #move injection position slightly into the volume
+    x[0] = x[0] + ddx*dx[0]
+    x[1] = x[1] + ddx*dx[1]
+    x[2] = x[2] + ddx*dx[2]
+
+    dx[0] = -dx[0]
+    dx[1] = -dx[1]
+    dx[2] = -dx[2]
+
+    l = math.sqrt(dx[0]*dx[0] + dx[1]*dx[1]+dx[2]*dx[2])
+    dx[0]/=l
+    dx[1]/=l
+    dx[2]/=l
+
+    #Now deactivate selection injectorSelection
+    SelDeActivate(meshname, injectorSelection)
+    SelShowActive( meshname);
+    ViewerActivate("Viewer1",meshname);
+    GuiUpdate(0,0);
+    PreCalcSurface(meshname)
+
+    return x, dx
+
+
+class SCRAssistant(gtk.Assistant):
+    def __init__(self):
+        super(SCRAssistant,self).__init__()
+        vbox = gtk.VBox()
+        label = gtk.Label(
+r"""This assistant will help you to set up a SCR spray preparation simulation according to current (March 2017) standards of AVL.
+Please note that the case you operate on will be changed on 'apply' in the final dialog.
+The SCRMacro assumes that the setup of your case is a steady stata simulation and includes all boundary conditions.
+Before executing the SCRMacro, please make sure the project is saved as it operates directly on the state of the solver steering file as saved, not as in memory.
+
+This version is for v2018/19 only!""")
+        label.set_line_wrap(True)
+        vbox.pack_start(label)
+        page = self.append_page(vbox )
+        self.set_page_complete(vbox, True)
+        self.set_page_title(vbox, "SCR setup macro")
+        self.set_page_type(vbox, gtk.ASSISTANT_PAGE_INTRO)
+
+        self.cases = FC_GuiPMGetCaseNames(0)
+        self.projDir = PM_GetProjectIOData()[1]
+        self.projName = os.path.basename(self.projDir)
+
+        allCasesPresent = True
+
+        self.last_visited_page = None
+
+        for ccname in self.cases:
+            cname = ccname[0:-6]
+            print cname
+            cpath = os.path.join(self.projDir, 'Calculation', cname)
+            allCasesPresent = allCasesPresent and os.path.exists(cpath)
+
+        if allCasesPresent:
+            self.casesGui = gui.CaseSelection(self.cases, self.projName)
+            self.casesGui.callback = self.on_case_selection_changed
+
+            page = self.append_page(self.casesGui)
+            self.connect('prepare', self.on_prepare)
+            self.set_page_complete(self.casesGui, not self.casesGui.selectedCase is None)
+            self.caseName = self.casesGui.selectedCase
+            self.set_page_title(self.casesGui, 'Select Case')
+
+            self.selectionList = gui.SelectionSelection()
+            page = self.append_page(self.selectionList)
+            self.set_page_complete(self.selectionList, True)
+            self.set_page_title(self.selectionList, 'Selections for 2D Results')
+
+            self.spraySelection = gui.SpraySelection()
+            page=self.append_page(self.spraySelection)
+            self.set_page_complete(self.spraySelection, True)
+            self.set_page_title(self.spraySelection, 'Spray: nozzle definition')
+
+            self.sprayParticleSelection = gui.SprayParticlesSelection()
+            self.sprayParticleSelection.setLastdir(self.projDir)
+            page=self.append_page(self.sprayParticleSelection)
+            self.set_page_complete(self.sprayParticleSelection, True)
+            self.set_page_title(self.sprayParticleSelection, 'Spray: particle definition')
+
+
+            self.sprayTargetSelection = gui.TargetMassflowSelection()
+            page = self.append_page(self.sprayTargetSelection)
+            self.set_page_complete(self.sprayTargetSelection, True)
+            self.set_page_title(self.sprayTargetSelection, "Spray: Target Massflow")
+
+            self.sprayDosingSelection = gui.SprayDosingSelection()
+            page = self.append_page(self.sprayDosingSelection)
+            self.set_page_complete(self.sprayDosingSelection, True)
+            self.set_page_title(self.sprayDosingSelection, "Spray: Dosing overview")
+
+
+            self.endWidget = gtk.VBox()
+            label = gtk.Label( 'Apply selected changes')
+            self.endWidget.pack_start(label)
+            self.progressBar = gtk.ProgressBar()
+            self.endWidget.pack_start(self.progressBar, fill=False)
+            page = self.append_page(self.endWidget)
+            self.set_page_complete(self.endWidget, True)
+            self.set_page_type(self.endWidget, gtk.ASSISTANT_PAGE_CONFIRM)
+            self.set_page_title(self.endWidget, 'Apply changes')
+
+        else:
+            #caselist and contents of Calculation directory differ
+            errorLabel = gtk.Label('Case list in memory and on disk differ - please save before executing SCR setup script')
+
+            page = self.append_page(errorLabel)
+            self.set_page_complete(errorLabel,False)
+            self.set_page_title(errorLabel, 'Error!')
+
+        self.connect('apply', self.on_apply)
+        self.connect('cancel', self.on_close)
+        self.connect('close', self.on_close)
+
+        self.set_size_request(1000,650)
+
+    def on_case_selection_changed(self):
+        self.caseName = self.casesGui.selectedCase
+        self.set_page_complete(self.casesGui, not (self.casesGui.selectedCase is None))
+
+    def on_prepare(self, assistant, page):
+        print assistant.get_current_page()
+        if page == self.selectionList and self.last_visited_page is self.casesGui:
+            self.selections = populateListForCasename(self.caseName)
+            for i in range(len(self.selectionList.liststore)):
+                self.selectionList.liststore.pop()
+            for line in self.selections:
+                self.selectionList.liststore.append(line)
+
+        #entering first page
+        if page == self.spraySelection:
+            injectorSel = []
+            for line in self.selections:
+                if line.SelType == 'Face':
+                    injectorSel.append(line.Selection)
+            self.spraySelection.set_selections(injectorSel)
+            self.spraySelection.populate_injector_dropdown()
+
+            if not(hasattr(self.spraySelection, 'visited') and self.spraySelection.visited):
+                f_injectorname = os.path.join(self.projDir, 'Calculation', self.caseName[0:-6], 'scrmacro_injector.xml')
+                if os.path.exists(f_injectorname):
+                    f_injector = open(f_injectorname, 'r')
+                    injectorProps = act.serial.load(f_injector)
+                    f_injector.close()
+                    self.spraySelection.setInjectorProps(injectorProps)
+
+        if page==self.sprayParticleSelection:
+            self.spraySelection.visited = True
+
+        if page == self.sprayDosingSelection:
+            self.sprayDosingSelection.setProperties(self.spraySelection.getDosingProperties(), self.sprayTargetSelection.targetMFlowProperties)
+
+        if page == self.sprayParticleSelection:
+            self.sprayParticleSelection.setProperties(self.spraySelection.getDosingProperties())
+
+        self.last_visited_page = page
+
+    def makeChanges(self):
+
+        liste = []
+        store = self.selectionList.liststore
+
+        for line in store:
+            liste.append( [
+                    line.Selection,
+                    line.Evaporation,
+                    line.UI,
+                    line.Wallfilm,
+                    line.SelType
+                ]
+            )
+
+#        listiter = store.get_iter_first()
+#        while listiter is not None:
+#            liste.append(  [
+#                store.get_value(listiter,0),
+#                store.get_value(listiter,1),
+#                store.get_value(listiter,2),
+#                store.get_value(listiter,3),
+#                store.get_value(listiter,4)
+#            ] )
+#            listiter = store.iter_next(listiter)
+        firecase =ssf.FireCase(projectDir=self.projDir)
+        firecase.setCase(self.caseName[0:-6])
+
+        f_injector = open(os.path.join(firecase.caseDir,'scrmacro_injector.xml'),'w')
+        act.serial.dump( self.spraySelection.getDosingProperties(),f_injector, format=act.serial.Format.XML,xml_indent=True )
+        f_injector.close()
+        injectorPosSel = self.spraySelection.getNozzlePosition()
+
+        sscFilename = ''
+
+        if injectorPosSel is not None:
+            x, dx = getCoordsForSelection(self.caseName, injectorPosSel, self.sprayDosingSelection.props)
+            sscFilename = ssf.createSSC(firecase,liste, timeInfo=self.sprayDosingSelection, x=x, dx=dx )
+        else:
+            sscFilename = ssf.createSSC(firecase,liste, timeInfo=self.sprayDosingSelection )
+
+        firecase.applySSC(sscFilename)
+
+        fire_version = float(ssf.getVersion()[1:].split('.')[0])
+        if fire_version<=2014:
+            newContents = ssf.correctSSF_2D_Results_Names(firecase.ssfFile)
+            if os.path.exists( firecase.ssfFile+'_uncorrected' ):
+                os.remove(firecase.ssfFile+'_uncorrected')
+            os.rename(firecase.ssfFile, firecase.ssfFile+'_uncorrected')
+            corrSSF = open(firecase.ssfFile, 'w')
+            corrSSF.writelines(newContents)
+            corrSSF.close()
+
+        project = os.path.join(PM_GetProjectIOData()[1], PM_GetProjectName()[2]+".fpr")
+        PostUnloadAll()
+        PreDeleteAll()
+        FC_GuiPMOpenProject(project, PM_GetProjectName()[2], "Viewer1")
+
+        make_spraycones(firecase)
+
+        if len(GuiGetAllViewer() ) == 0:
+            GuiViewerCreate("")
+        GuiUpdate(0,0);
+
+    def on_apply(self, assistant):
+        self.makeChanges()
+#        print "refreshed"
+#        self.on_close()
+#        print "closed"
+
+
+    def on_close(self, assistant=None, *args):
+        self.hide_all()
+        gtk.main_quit(*args)
+
+#main project -- starting point for fire_wm
+assistant = SCRAssistant()
+assistant.show_all()
+assistant.present()
+gtk.main()
+assistant.destroy()

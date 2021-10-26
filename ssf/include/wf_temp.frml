@@ -1,0 +1,31 @@
+// --- Wall_film_average_temperature.h
+// Computes the mass-weighted average of wall film temperature [K]
+// at a boundary face selection.
+
+int iwfc_of_ib[0];
+
+$$init
+int i, ib;
+if(init){
+	// set up bnd-index for each wall-film-cell
+	resize(iwfc_of_ib, NBFAC + 1);
+	iwfc_of_ib = -1;
+	i = IWCELL - IWBUFF; while(i--){
+		ib = LXTBND[i][0] - 1;
+		iwfc_of_ib[ib] = i;
+	}
+}else{
+	resize(iwfc_of_ib, 0);
+	if(IAMPRO < 2 && divisor > 0.0){
+		print "average wallfilm temperature in selection", name, ":", sum/divisor, "[K]";
+	}
+}
+
+$$formula
+int iwfc;
+if(index < NBFAC && iwfc_of_ib[index] >= 0){
+	iwfc = iwfc_of_ib[index];
+	divisor += WFMASS[iwfc];
+	return WFTEMP[iwfc] * WFMASS[iwfc];;
+}
+return 0.0;

@@ -1,0 +1,32 @@
+{
+  "WALLFILM" : {
+    "wf_mass:kg" : "wf_mass.frml",
+    "wf_temp:K": "wf_temp.frml",
+    "wf_thick:m": "wf_thick.frml",
+    "wf_area:m^2": "wf_area.frml",
+    "T_avg:K": "T_avg.frml"
+  },
+  "UI"  : {
+    "UI_Velo:-" :"UI_Velo.frml",
+    "UI_NH3:-": "UI_NH3.frml",
+    "UI_NH3_Avg:-": "UI_NH3_Avg.frml",
+    "UI_NH3_Denweight:-" : "UI_NH3_Denweight_2D.frml",
+    "Centricity:-":"Centricity.frml",
+    "TotalPressure:Pa":"AverageTotalPressure.frml",
+    "TotalPressureInDir:Pa":"AverageTotalPressure_inFlowDir.frml"
+  },
+  "EVAP" : {
+    "evap:kg" : "evap.frml",
+    "spraymass:kg": "spraymass.frml"
+  },
+  "3D" : {
+    "Mean_HNCO_Molefrac:-" : "HNCO_Avg_3D.frml",
+    "Mean_NH3_Molefrac:-"  : "NH3_Avg_3D.frml",
+    "Mean_NO_Molefrac:-"   : "NO_Avg_3D.frml",
+    "Mean_NO2_Molefrac:-"  : "NO2_Avg_3D.frml",
+    "T_Min:K"              : "T_Min_3D.frml",
+    "T_Mean:K"             : "T_Avg_3D.frml",
+    "Species_NH3_average_Mole_Fraction:-"
+            : "NH3_HNCO_Avg_3D.frml"
+    }
+}

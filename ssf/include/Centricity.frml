@@ -1,0 +1,48 @@
+
+// --- Centricity_of_Velocity_for_faces.h ---
+double meanLoc[3];
+double mflowWeight;
+double mflowLoc[3];
+$$init
+double eps;
+double rstar;
+if(init){
+   meanLoc = 0;
+   mflowWeight = 0;
+   mflowLoc = 0;
+}else{
+   if(divisor == 0.0) return;
+
+   MPI_SUM_VEC_D(meanLoc,3);
+   MPI_SUM_VEC_D(mflowLoc,3);
+   MPI_SUM_D(mflowWeight);
+
+   eps = |(1./mflowWeight) * mflowLoc - (1./divisor) * meanLoc|;
+
+   rstar = pow( 1./Pi*divisor ,0.5);
+
+   divisor = 0;
+   sum = 1. - eps/rstar;
+
+}
+
+$$formula
+double loc[3];
+double size;
+double value = |v|;
+double mflow;
+if(vol > 0.0){	// this means current element is a cell
+   divisor =0;
+   return 0;
+}else{ // else it is a face
+   size = |n|;
+}
+
+mflow = den * (v . n);
+mflowWeight += mflow;
+mflowLoc += mflow * x;
+//sum up mean location
+loc = x * size;
+meanLoc += loc;
+divisor += size;
+return 1;
